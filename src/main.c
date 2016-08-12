@@ -76,7 +76,7 @@ int32_t main(int32_t argc, char const *argv[]) {
 	interpreter_run_program(state);
 
 	fp = fopen("memdump.bin", "w");
-	fwrite(state->memory, sizeof(uint16_t), 0x10000, fp);
+	fwrite(state->memory, 2, 0x10000, fp);
 	fclose(fp);
 	printf("Dumped memory\n");
 

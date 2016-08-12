@@ -35,8 +35,8 @@ uint16_t queue_interrupts_remove(InterruptQueue* queue) {
 	// Copies items starting from index 1 to start from index 0
 	memmove(
 		&queue->interrupt_queue,
-		((void*) &queue->interrupt_queue) + sizeof(uint16_t),
-		--queue->count * sizeof(uint16_t)
+		((void*) &queue->interrupt_queue) + 2,
+		--queue->count * 2
 	);
 	return message;
 }
@@ -54,8 +54,8 @@ uint8_t queue_keys_remove(KeyQueue* queue) {
 	uint8_t message = queue->key_queue[0];
 	memmove(
 		&queue->key_queue,
-		((void*) &queue->key_queue) + sizeof(uint8_t),
-		--queue->count * sizeof(uint8_t)
+		((void*) &queue->key_queue) + 1,
+		--queue->count
 	);
 	return message;
 }
