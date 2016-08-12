@@ -1,0 +1,95 @@
+; dcpu-16-emu - A simple DCPU-16 emulator written in C.
+; Copyright (C) 2016  Mrrraou
+;
+; This program is free software: you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation, either version 3 of the License, or
+; (at your option) any later version.
+;
+; This program is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+; GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+.shortform
+
+.define MEM_MAP_SCREEN		0x0000
+.define SET_BORDER_COLOR	0x0003
+
+
+; Get the amount of connected hardware devices
+HWN I
+
+; Let's get values for each device
+:loop
+	SUB I, 1
+	; Get info about the device
+	HWQ I
+
+	; Check if the device is a LEM1802 (ID: 0x7349F615)
+	IFE A, 0xF615
+		IFE B, 0x7349
+			; If so, let's go to the program.
+			SET PC, setup_monitor
+
+	; Wasn't found; let's exit.
+	IFE I, 0
+		SET PC, exit
+
+	SET PC, loop
+
+:setup_monitor
+	; Map the screen data to 0x1000
+	SET A, MEM_MAP_SCREEN
+	SET B, 0x1000
+	HWI I
+	; Sets the border color
+	SET A, SET_BORDER_COLOR
+	SET B, 0xD ; Magenta
+	HWI I
+
+; This copies "Hello, World !" in memory, at 0x1000.
+SET X, 0x1000
+SET Y, hello_world
+SET Z, 0xF000 ; White characters, on black background.
+JSR strcpy
+
+; Execution is done
+SET PC, exit
+
+; Modified strcpy
+; Copies the null-terminated string at location Y to the location X.
+; Sets up the values for the LEM1802 to display.
+; X: *dst
+; Y: *src
+; Z: bitwise OR filter to apply on the value
+:strcpy
+	; Saves I, J into the stack
+	SET PUSH, I
+	SET PUSH, J
+
+	SET I, X
+	SET J, Y
+	:.cpyval
+		STI [I], [J]
+		BOR [I - 1], Z
+		IFE [J], 0 ; Is it a null value ?
+			SET PC, .done
+		SET PC, .cpyval
+
+	:.done
+		; Restores I, J from the stack
+		SET J, POP
+		SET I, POP
+		SET PC, POP ; Return to the code
+; End of strcpy
+
+:hello_world	.asciiz "Hello, World !"
+
+:exit
+	; Infinite loop
+	SET PC, exit

@@ -1,0 +1,348 @@
+; dcpu-16-emu - A simple DCPU-16 emulator written in C.
+; Copyright (C) 2016  Mrrraou
+;
+; This program is free software: you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation, either version 3 of the License, or
+; (at your option) any later version.
+;
+; This program is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+; GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+.shortform
+
+.define LEM1802_ID_LW			0xF615
+.define LEM1802_ID_HW			0x7349
+.define KBD_ID_LW					0x7406
+.define KBD_ID_HW					0x30CF
+.define CLK_ID_LW					0xB402
+.define CLK_ID_HW					0x12D0
+
+.define MEM_MAP_SCREEN		0x0000
+.define MEM_MAP_FONT			0x0001
+.define MEM_MAP_PALETTE		0x0002
+.define SET_BORDER_COLOR	0x0003
+.define MEM_DUMP_FONT			0x0004
+.define MEM_DUMP_PALETTE	0x0005
+
+.define KBD_CLEAR_BUFFER	0x0000
+.define KBD_GET_NEXT_KEY	0x0001
+.define KBD_SETUP_INT			0x0003
+
+.define CLK_SET_TICK_RATE	0x0000
+.define CLK_ELAPSED_TICKS	0x0001
+.define CLK_SETUP_INT			0x0002
+
+.define monitor 					0x1001
+.define keyboard 					0x1002
+.define clock		 					0x1003
+
+; Get the amount of connected hardware devices
+HWN I
+SET [0x1000], I
+
+; Default values (to know if found or not)
+SET [monitor], 	0xFFFF
+SET [keyboard], 0xFFFF
+SET [clock], 		0xFFFF
+
+; Let's get values for each device
+:loop
+	SUB I, 1
+	; Get info about the device
+	HWQ I
+
+	; Store it somewhere for debugging purposes
+	; Starting from 0x2000
+	SET J, I
+	MUL J, 5
+	ADD J, 0x2000
+	SET [J], A			; Low word ID
+	SET [J + 1], B	; High word ID
+	SET [J + 2], C	; Version
+	SET [J + 3], X	; Low word manufacturer ID
+	SET [J + 4], Y	; High word manufacturer ID
+
+	; Check if the device is a LEM1802
+	IFE A, LEM1802_ID_LW
+		IFE B, LEM1802_ID_HW
+			; If so, let's store it.
+			SET [monitor], I
+
+	; Check if the device is a keyboard
+	IFE A, KBD_ID_LW
+		IFE B, KBD_ID_HW
+			; If so, let's store it.
+			SET [keyboard], I
+
+	; Check if the device is a clock
+	IFE A, CLK_ID_LW
+		IFE B, CLK_ID_HW
+			; If so, let's store it.
+			SET [clock], I
+
+	; We searched through all the devices; let's exit.
+	IFE I, 0
+		SET PC, setup_monitor
+
+	SET PC, loop
+
+; Send an interrupt to the LEM1802 monitor
+:setup_monitor
+	; Pre-define the notifier for keyboard's presence as red
+	SET [0x817F], 0x4400
+	; Pre-define the notifier for clock's presence as red
+	SET [0x817E], 0x4400
+
+	; If the monitor was not found; exit.
+	IFE [monitor], 0xFFFF
+		SET PC, exit
+
+	; Map the "framebuffer" to 0x8000
+	SET A, MEM_MAP_SCREEN
+	SET B, 0x8000
+	HWI [monitor]
+	; Sets the border color
+	SET A, SET_BORDER_COLOR
+	SET B, 3
+	HWI [monitor]
+	; Dumps the default font data at 0x4000
+	SET A, MEM_DUMP_FONT
+	SET B, 0x4000
+	HWI [monitor]
+	; Maps the font data at 0x4000 (not necessary, but useful for testing)
+	SET A, MEM_MAP_FONT
+	SET B, 0x4000
+	HWI [monitor]
+
+; Copy our cool data
+SET X, 0x8000
+SET Y, text_hex_digits
+SET Z, 0xF000 ; White text on black background
+JSR strcpy
+SET X, 0x8020
+SET Y, text_hello_world
+SET Z, 0xF080 ; White text on black background, blinking
+JSR strcpy
+
+; No keyboard found?
+IFE [keyboard], 0xFFFF
+	SET PC, check_clock
+
+; Setup the keyboard
+:setup_keyboard
+	; Set keyboard's presence notifier green
+	SET [0x817F], 0x2200
+
+	; Display found message
+	SET X, 0x8160
+	SET Y, text_kbd_found
+	SET Z, 0x0F00
+	JSR strcpy
+
+	; Display "Pressed key:" message
+	SET X, 0x8140
+	SET Y, text_pressed_key
+	SET Z, 0xF000
+	JSR strcpy
+
+	; Setup the interrupt handler
+	IAS interrupt_handler
+
+	; Setup interrupts on the keyboard
+	SET A, KBD_SETUP_INT
+	SET B, keyboard
+	HWI [keyboard]
+
+; No clock found?
+:check_clock
+IFE [clock], 0xFFFF
+	SET PC, infloop
+
+; Setup the clock
+:setup_clock
+	; Set clock's presence notifier green
+	SET [0x817E], 0x2200
+
+	; Display found message
+	SET X, 0x80E0
+	SET Y, text_clk_found
+	SET Z, 0x0F00
+	JSR strcpy
+
+	; Display "Elapsed ticks:" message
+	SET X, 0x8100
+	SET Y, text_elapsed_ticks
+	SET Z, 0xF000
+	JSR strcpy
+
+	; Setup the interrupt handler
+	IAS interrupt_handler
+
+	; Setup the clock rate
+	SET A, CLK_SET_TICK_RATE
+	SET B, 120
+	HWI [clock]
+
+	; Setup interrupts on the clock
+	SET A, CLK_SETUP_INT
+	SET B, clock
+	HWI [clock]
+
+; Infinite loop, waiting for interrupts
+:infloop
+	ADD [0x8060], 1
+
+	; Displays [0x8060] on the screen at 0x8062
+	; This is the value incremented per iteration
+	SET X, 0x8062
+	SET Y, [0x8060]
+	SET Z, 0xF000
+	JSR hex_itoa
+
+	; Displays [0x1100] on the screen at 0x815C
+	; This is the keyboard value
+	SET X, 0x815C
+	SET Y, [0x1100]
+	SET Z, 0x7000
+	JSR hex_itoa
+
+	; Displays [0x1101] on the screen at 0x811C
+	; This is the elapsed ticks value
+	SET X, 0x811C
+	SET Y, [0x1101]
+	SET Z, 0x7000
+	JSR hex_itoa
+
+	SET PC, infloop
+
+; Handle keyboard interrupts and stuff
+:interrupt_handler
+	SET PC, interrupt_handler_checks
+	:.kbd
+		; Store the registers into the stack
+		SET PUSH, C
+
+		; Store the pressed key in RAM
+		SET A, KBD_GET_NEXT_KEY
+		HWI [keyboard]
+		SET [0x1100], C
+
+		; Restore the registers from the stack
+		SET C, POP
+		SET PC, interrupt_handler_done
+	:.clk
+		; Store the registers into the stack
+		SET PUSH, C
+
+		; Store the pressed key in RAM
+		SET A, CLK_ELAPSED_TICKS
+		HWI [clock]
+		SET [0x1101], C
+
+		; Restore the registers from the stack
+		SET C, POP
+		SET PC, interrupt_handler_done
+	:.checks
+		IFE A, keyboard
+			SET PC, interrupt_handler_kbd
+		IFE A, clock
+			SET PC, interrupt_handler_clk
+	:.done
+		RFI 0
+
+; Hexadecimal itoa
+; Convert to displayable ASCII hexadecimal digits
+; X *dst
+; Y uint16
+; Z bitwise OR mask
+:hex_itoa
+	; We save registers to the stack first
+	SET PUSH, A
+	SET PUSH, B
+	SET PUSH, I
+	SET PUSH, J
+
+	SET I, 4 ; 4 hex digits
+	:.subloop
+		; We retrieve the whole value
+		SET B, Y
+
+		; Setup the values
+		SUB I, 1
+		SET A, 0x000F
+
+		; 4 bits per digit
+		; Equivalent to 4 - J
+		SET J, 0xFFFF
+		SUB J, I
+		ADD J, 4
+
+		MUL J, 4
+
+		; We should get the right digit
+		SHL A, J
+		AND B, A
+		SHR B, J
+
+		; Output the digit
+		SET J, [B + text_hex_digits]
+		BOR J, Z
+		SET A, X
+		ADD A, I
+		SET [A], J
+
+		; Start again if it's not the last digit
+		IFN I, 0
+			SET PC, hex_itoa_subloop
+
+	; We restore the registers and we return to our execution
+	SET J, POP
+	SET I, POP
+	SET B, POP
+	SET A, POP
+	SET PC, POP
+
+; Modified strcpy
+; Copies the null-terminated string at location Y to the location X.
+; Sets up the values for the LEM1802 to display.
+; X: *dst
+; Y: *src
+; Z: bitwise OR filter to apply on the value
+:strcpy
+	; Saves I, J into the stack
+	SET PUSH, I
+	SET PUSH, J
+
+	SET I, X
+	SET J, Y
+	:.cpyval
+		STI [I], [J]
+		BOR [I - 1], Z
+		IFE [J], 0 ; Is it a null value ?
+			SET PC, .done
+		SET PC, .cpyval
+
+	:.done
+		; Restores I, J from the stack
+		SET J, POP
+		SET I, POP
+		SET PC, POP ; Return to the code
+; End of strcpy
+
+; Text data
+:text
+	:.hex_digits		.asciiz "0123456789ABCDEF"
+	:.hello_world		.asciiz "Hello, World"
+	:.kbd_found			.asciiz "Keyboard found."
+	:.pressed_key		.asciiz "Pressed key:"
+	:.clk_found			.asciiz "Clock found."
+	:.elapsed_ticks	.asciiz "Elapsed ticks:"
+
+:exit

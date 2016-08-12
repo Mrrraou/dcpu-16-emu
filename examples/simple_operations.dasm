@@ -1,0 +1,136 @@
+; dcpu-16-emu - A simple DCPU-16 emulator written in C.
+; Copyright (C) 2016  Mrrraou
+;
+; This program is free software: you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation, either version 3 of the License, or
+; (at your option) any later version.
+;
+; This program is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+; GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+.shortform
+
+; Sets reg A to 0x0030
+SET A, 0x0030
+
+; Fills addresses 0x1000-0x1002 in memory with some data
+SET [0x1000], 0xDEAD
+SET [0x1001], 0xC0DE
+SET [0x1002], 0x1337
+
+; Sets [X++] to 0x0030..0x0020
+; X starts
+SET X, 0x0800
+:loop
+	SUB A, 1
+	SET [X], A
+	ADD X, 1
+	IFN A, 0x0020
+		SET PC, loop
+
+; We want to keep our super duper important 0xC0DE, let's make sure we do
+SET I, 0xC0DE
+; "Equivalent" to memset((uint16_t*) 0x8000, 0xCAFE, 0x10 * sizeof(uint16_t))
+SET X, 0x8000 ; Destination
+SET Y, 0xCAFE ; Value
+SET Z, 0x0010 ; Size
+JSR memset
+; Let's check our 0xC0DE
+IFN I, 0xC0DE
+	; We are not happy :(
+	SET I, 0xDEAD
+SET [0x0080], I
+
+; We want to keep our super duper important 0xCAFE and 0xBEEF,
+; let's make sure we do
+SET I, 0xCAFE
+SET J, 0xBEEF
+; "Equivalent" to
+; memcpy((uint16_t*) 0x8100, (uint16_t*) 0x8000, 0x10 * sizeof(uint16_t))
+SET X, 0x8100 ; Destination
+SET Y, 0x8000 ; Source
+SET Z, 0x0010 ; Size
+JSR memcpy
+; Let's check our 0xCAFE and 0xBEEF
+IFN I, 0xCAFE
+	SET I, 0xDEAD
+IFN J, 0xBEEF
+	SET J, 0xDEAD
+
+SET [0x0084], I
+SET [0x0085], J
+
+; Execution is done
+SET PC, exit
+
+
+; == Everything that follows here are subroutines ==
+; ==  and they probably aren't optimized at all~  ==
+
+; Not compliant to the <cstring> memset.
+; Here, it sets Y to every word from X to Z.
+; X: *dst
+; Y: value
+; Z: size (in words)
+:memset
+	; No need to do stuff if size is 0
+	IFE Z, 0
+		SET PC, POP
+
+	SET PUSH, I ; Saves I into the stack
+
+	SET I, X
+	ADD I, Z
+	:.setval
+		SUB I, 1
+		SET [I], Y
+		IFE I, X
+			SET PC, .done
+		SET PC, .setval
+
+	:.done
+		SET I, POP	; Restores I from the stack
+		SET PC, POP ; Return to the code
+; End of memset
+
+; Maybe compliant to the <cstring> memcpy.
+; Copies the buffer of size Z at location Y to the location X.
+; X: *dst
+; Y: *src
+; Z: size (in words)
+:memcpy
+	; No need to do stuff if size is 0
+	IFE Z, 0
+		SET PC, POP
+
+	; Saves I, J into the stack
+	SET PUSH, I
+	SET PUSH, J
+
+	SET I, X
+	SET J, Y
+	ADD I, Z
+	ADD J, Z
+	SUB I, 1
+	SUB J, 1
+	:.cpyval
+		STD [I], [J]
+		IFL I, X
+			SET PC, .done
+		SET PC, .cpyval
+
+	:.done
+		; Restores I, J from the stack
+		SET J, POP
+		SET I, POP
+		SET PC, POP ; Return to the code
+; End of memcpy
+
+:exit

@@ -1,0 +1,73 @@
+; dcpu-16-emu - A simple DCPU-16 emulator written in C.
+; Copyright (C) 2016  Mrrraou
+;
+; This program is free software: you can redistribute it and/or modify
+; it under the terms of the GNU General Public License as published by
+; the Free Software Foundation, either version 3 of the License, or
+; (at your option) any later version.
+;
+; This program is distributed in the hope that it will be useful,
+; but WITHOUT ANY WARRANTY; without even the implied warranty of
+; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+; GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License
+; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+.shortform
+
+; This file is for testing interrupts with the interpreter.
+
+; Handle interrupts with handle_interrupt
+IAS handle_interrupt_1
+
+; Let's check if we keep this after all the interrupts
+SET A, 0xDEAD
+
+; Triggers a software interrupt
+INT 0xCAFE
+
+; Get cafe
+SET B, [0x0100]
+; Get beef
+SET C, [0x0101]
+; Get food
+SET X, [0x0102]
+; Get lucky
+SET Y, [0x0103]
+
+; Get our value on the register A
+SET [0x0110], A
+
+; Execution ends here
+SET PC, exit
+
+; Interrupt handler
+:handle_interrupt_1
+	SET [0x0100], A
+	; Check what happens if we trigger an interrupt while queueing is enabled
+	IAS handle_interrupt_2
+	INT 0xBEEF
+	; Let's try disabling interrupt queueing
+	; This should trigger the queued interrupt
+	IAQ 0
+	; Triggers an interrupt with another handler
+	IAS handle_interrupt_3
+	INT 0xF00D
+	; Better to keep it enabled, actually.
+	IAQ 1
+	; Because we are lucky
+	SET [0x0103], 0x0777
+	; Let's get back to our stuff
+	RFI 0
+
+:handle_interrupt_2
+	SET [0x0101], A
+	RFI 0
+
+:handle_interrupt_3
+	SET [0x0102], A
+	RFI 0
+
+:exit
