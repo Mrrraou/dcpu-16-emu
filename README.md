@@ -2,7 +2,7 @@
 
 ## Description
 
-A simple DCPU-16 interpreter, written in C.
+A simple DCPU-16 emulator, written in C.
 
 ## Compliance
 
@@ -10,7 +10,7 @@ A simple DCPU-16 interpreter, written in C.
 	can be found
 	[here](https://raw.githubusercontent.com/hakuch/Dcpu16Universe/master/doc/hw/dcpu16.txt).
 
-* This interpreter probably doesn't run at a "stable" clock rate. It probably
+* This emulator probably doesn't run at a "stable" clock rate. It probably
 	runs faster than 100kHz, and can vary per system.
 
 * Having the interrupt queue growing longer than 256 interrupts "crashes" the
